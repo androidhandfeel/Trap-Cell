@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trap Cell - 함정에 유인하는 게임</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            background-color: #111;
+            color: white;
+            touch-action: none;
+        }
+        #gameCanvas {
+            display: block;
+            background-color: #222;
+        }
+        #gameUI {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+        #gameUI div {
+            margin: 5px 0;
+        }
+        #startScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+            z-index: 10;
+        }
+        #startScreen h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px cyan;
+        }
+        #startScreen p {
+            font-size: 1.2em;
+            margin-bottom: 30px;
+            max-width: 80%;
+        }
+        .btn {
+            padding: 12px 25px;
+            font-size: 1.2em;
+            margin: 10px;
+            cursor: pointer;
+            background: linear-gradient(45deg, #00bcd4, #009688);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+            transition: all 0.3s;
+        }
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
+        }
+        #trapCooldown {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            border-radius: 10px;
+            border: 2px solid #ff5555;
+            box-shadow: 0 0 10px rgba(255, 85, 85, 0.5);
+        }
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        #comboDisplay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3em;
+            color: gold;
+            text-shadow: 0 0 10px gold;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 5;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="gameUI">
+        <div>점수: <span id="scoreDisplay">0</span></div>
+        <div>생존 적: <span id="enemyCount">0</span></div>
+        <div>레벨: <span id="levelDisplay">1</span></div>
+        <div>연속 함정: <span id="comboCount">0</span></div>
+    </div>
+    
+    <div id="trapCooldown">
+        함정 준비: <span id="trapReady">READY</span>
+    </div>
+    
+    <div id="comboDisplay"></div>
+    
+    <div id="startScreen">
+        <h1>TRAP CELL</h1>
+        <p>적 세포를 함정으로 유인하세요! 적들은 화면 4구석에서 나타납니다. 당신의 세포를 움직여 적들을 추적하게 만든 후, 함정을 설치해 처치하십시오!</p>
+        <button class="btn" id="startButton">게임 시작</button>
+    </div>
+
+    <script>
+        // 게임 변수
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const enemyCountDisplay = document.getElementById('enemyCount');
+        const levelDisplay = document.getElementById('levelDisplay');
+        const comboCountDisplay = document.getElementById('comboCount');
+        const trapReadyDisplay = document.getElementById('trapReady');
+        const comboDisplay = document.getElementById('comboDisplay');
+        const startScreen = document.getElementById('startScreen');
+        const startButton = document.getElementById('startButton');
+
+        // 캔버스 크기 설정
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // 화면 4구석 좌표 (적 생성 위치)
+        const corners = [
+            { x: 50, y: 50 }, // 좌상단
+            { x: canvas.width - 50, y: 50 }, // 우상단
+            { x: 50, y: canvas.height - 50 }, // 좌하단
+            { x: canvas.width - 50, y: canvas.height - 50 } // 우하단
+        ];
+
+        // 게임 상태
+        let gameRunning = false;
+        let playerCell = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            radius: 20,
+            color: '#3498db',
+            speed: 5,
+            isBoosting: false,
+            boostCooldown: 0
+        };
+        
+        let enemyCells = [];
+        let traps = [];
+        let particles = [];
+        let score = 0;
+        let level = 1;
+        let gameTime = 0;
+        let combo = 0;
+        let lastTrapTime = 0;
+        let trapCooldown = 0;
+        let animationId;
+        let enemySpawnTimer = 0;
+        let difficulty = 1;
+
+        // 게임 시작
+        function startGame() {
+            startScreen.style.display = 'none';
+            gameRunning = true;
+            
+            // 플레이어 초기화
+            playerCell = {
+                x: canvas.width / 2,
+                y: canvas.height / 2,
+                radius: 20,
+                color: '#3498db',
+                speed: 5,
+                isBoosting: false,
+                boostCooldown: 0
+            };
+            
+            // 적 세포 초기화
+            enemyCells = [];
+            for (let i = 0; i < 3; i++) {
+                createEnemyCell();
+            }
+            
+            // 함정 초기화
+            traps = [];
+            particles = [];
+            score = 0;
+            level = 1;
+            gameTime = 0;
+            combo = 0;
+            lastTrapTime = 0;
+            trapCooldown = 0;
+            enemySpawnTimer = 0;
+            difficulty = 1;
+            
+            updateDisplays();
+            
+            // 게임 루프 시작
+            gameLoop();
+        }
+
+        // 적 세포 생성 (화면 4구석에서 랜덤하게 생성)
+        function createEnemyCell() {
+            const corner = corners[Math.floor(Math.random() * corners.length)];
+            const size = Math.random() * 15 + 10;
+            
+            enemyCells.push({
+                x: corner.x,
+                y: corner.y,
+                radius: size,
+                color: `hsl(${Math.random() * 60 + 0}, 100%, 50%)`,
+                originalColor: `hsl(${Math.random() * 60 + 0}, 100%, 50%)`,
+                speed: Math.random() * 2 + 1 * difficulty,
+                originalSpeed: Math.random() * 2 + 1 * difficulty,
+                dx: 0,
+                dy: 0,
+                isChasing: false,
+                chaseTimer: 0,
+                isTrapped: false,
+                trapTimer: 0
+            });
+        }
+
+        // 함정 생성
+        function createTrap(x, y) {
+            traps.push({
+                x: x,
+                y: y,
+                radius: 10,
+                activationRadius: 80,
+                isActive: false,
+                timer: 0,
+                maxTimer: 180 // 3초 유지
+            });
+            
+            // 함정 생성 효과
+            for (let i = 0; i < 20; i++) {
+                createParticle(x, y, '#ff5555');
+            }
+        }
+
+        // 파티클 생성
+        function createParticle(x, y, color) {
+            particles.push({
+                x: x,
+                y: y,
+                radius: Math.random() * 3 + 1,
+                color: color || `hsl(${Math.random() * 360}, 100%, 50%)`,
+                dx: (Math.random() - 0.5) * 4,
+                dy: (Math.random() - 0.5) * 4,
+                life: Math.random() * 30 + 20
+            });
+        }
+
+        // 게임 루프
+        function gameLoop() {
+            if (!gameRunning) return;
+            
+            // 화면 지우기
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 배경 그리기
+            drawBackground();
+            
+            // 게임 시간 업데이트
+            gameTime++;
+            
+            // 난이도 조절
+            if (gameTime % 1000 === 0) {
+                difficulty += 0.2;
+                level++;
+                showLevelUp();
+            }
+            
+            // 적 생성 타이머 (화면 4구석에서 생성)
+            enemySpawnTimer++;
+            if (enemySpawnTimer > 300 / difficulty) {
+                if (enemyCells.length < 5 + level) {
+                    createEnemyCell();
+                }
+                enemySpawnTimer = 0;
+            }
+            
+            // 함정 쿨다운
+            if (trapCooldown > 0) {
+                trapCooldown--;
+                trapReadyDisplay.textContent = `${Math.ceil(trapCooldown/60)}초`;
+                trapReadyDisplay.style.color = '#ff9999';
+            } else {
+                trapReadyDisplay.textContent = "READY";
+                trapReadyDisplay.style.color = '#55ff55';
+            }
+            
+            // 콤보 감소
+            if (gameTime - lastTrapTime > 180 && combo > 0) {
+                combo = 0;
+                updateDisplays();
+            }
+            
+            // 플레이어 세포 업데이트
+            updatePlayerCell();
+            drawCell(playerCell);
+            
+            // 적 세포 업데이트 및 그리기
+            updateEnemyCells();
+            
+            // 함정 업데이트 및 그리기
+            updateTraps();
+            
+            // 파티클 업데이트 및 그리기
+            updateParticles();
+            
+            // 충돌 검사
+            checkCollisions();
+            
+            // 디스플레이 업데이트
+            updateDisplays();
+            
+            // 게임 계속 진행
+            animationId = requestAnimationFrame(gameLoop);
+        }
+
+        // 배경 그리기
+        function drawBackground() {
+            // 어두운 그리드 배경
+            ctx.strokeStyle = 'rgba(50, 50, 50, 0.2)';
+            ctx.lineWidth = 1;
+            
+            const gridSize = 40;
+            for (let x = 0; x < canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            
+            for (let y = 0; y < canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        // 플레이어 세포 업데이트
+        function updatePlayerCell() {
+            // 부스팅 상태 업데이트
+            if (playerCell.isBoosting) {
+                playerCell.boostCooldown--;
+                if (playerCell.boostCooldown <= 0) {
+                    playerCell.isBoosting = false;
+                    playerCell.boostCooldown = 120;
+                }
+            } else if (playerCell.boostCooldown > 0) {
+                playerCell.boostCooldown--;
+            }
+            
+            // 이동 방향 계산
+            const dx = mouseX - playerCell.x;
+            const dy = mouseY - playerCell.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance > 5) {
+                const speed = playerCell.isBoosting ? playerCell.speed * 1.5 : playerCell.speed;
+                playerCell.x += dx / distance * speed;
+                playerCell.y += dy / distance * speed;
+            }
+            
+            // 화면 경계 체크
+            if (playerCell.x < playerCell.radius) playerCell.x = playerCell.radius;
+            if (playerCell.x > canvas.width - playerCell.radius) playerCell.x = canvas.width - playerCell.radius;
+            if (playerCell.y < playerCell.radius) playerCell.y = playerCell.radius;
+            if (playerCell.y > canvas.height - playerCell.radius) playerCell.y = canvas.height - playerCell.radius;
+        }
+
+        // 적 세포 업데이트
+        function updateEnemyCells() {
+            for (let i = enemyCells.length - 1; i >= 0; i--) {
+                const enemy = enemyCells[i];
+                
+                // 함정에 걸린 상태
+                if (enemy.isTrapped) {
+                    enemy.trapTimer++;
+                    enemy.color = `hsl(${gameTime % 360}, 100%, 50%)`; // 색상 변화 효과
+                    
+                    // 함정에서 풀려남
+                    if (enemy.trapTimer > 180) {
+                        enemy.isTrapped = false;
+                        enemy.color = enemy.originalColor;
+                        enemy.speed = enemy.originalSpeed * 1.5; // 풀려난 후 일시적으로 빠름
+                    }
+                    continue;
+                }
+                
+                // 플레이어와의 거리 계산
+                const dx = playerCell.x - enemy.x;
+                const dy = playerCell.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // 추적 로직
+                if (distance < 250) { // 플레이어 감지 범위
+                    enemy.isChasing = true;
+                    enemy.chaseTimer = 180; // 3초 동안 추적
+                    
+                    // 플레이어를 향해 이동
+                    enemy.dx = dx / distance;
+                    enemy.dy = dy / distance;
+                } else if (enemy.chaseTimer > 0) {
+                    enemy.chaseTimer--;
+                } else {
+                    enemy.isChasing = false;
+                    // 무작위 이동
+                    if (Math.random() < 0.02) {
+                        enemy.dx = (Math.random() - 0.5);
+                        enemy.dy = (Math.random() - 0.5);
+                    }
+                }
+                
+                // 이동 적용
+                enemy.x += enemy.dx * enemy.speed;
+                enemy.y += enemy.dy * enemy.speed;
+                
+                // 화면 경계 체크
+                if (enemy.x < enemy.radius) enemy.x = enemy.radius;
+                if (enemy.x > canvas.width - enemy.radius) enemy.x = canvas.width - enemy.radius;
+                if (enemy.y < enemy.radius) enemy.y = enemy.radius;
+                if (enemy.y > canvas.height - enemy.radius) enemy.y = canvas.height - enemy.radius;
+                
+                // 적 그리기
+                drawEnemyCell(enemy);
+            }
+        }
+
+        // 적 세포 그리기
+        function drawEnemyCell(enemy) {
+            ctx.beginPath();
+            ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+            
+            // 추적 중인 적은 색상이 더 밝아짐
+            if (enemy.isChasing) {
+                ctx.fillStyle = `hsl(${enemy.color.split(',')[0].split('(')[1]}, 100%, 70%)`;
+            } else {
+                ctx.fillStyle = enemy.color;
+            }
+            
+            ctx.fill();
+            
+            // 세포 테두리
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.closePath();
+            
+            // 추적 중인 적은 눈 표시
+            if (enemy.isChasing) {
+                const eyeSize = enemy.radius * 0.15;
+                const eyeX = enemy.x + enemy.radius * 0.4 * Math.cos(Math.atan2(enemy.dy, enemy.dx));
+                const eyeY = enemy.y + enemy.radius * 0.4 * Math.sin(Math.atan2(enemy.dy, enemy.dx));
+                
+                ctx.beginPath();
+                ctx.arc(eyeX, eyeY, eyeSize, 0, Math.PI * 2);
+                ctx.fillStyle = 'white';
+                ctx.fill();
+                ctx.closePath();
+                
+                ctx.beginPath();
+                ctx.arc(eyeX, eyeY, eyeSize * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = 'black';
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        // 함정 업데이트
+        function updateTraps() {
+            for (let i = traps.length - 1; i >= 0; i--) {
+                const trap = traps[i];
+                
+                // 함정 활성화 체크
+                if (!trap.isActive) {
+                    // 플레이어가 일정 거리 이상 떨어지면 활성화
+                    const distToPlayer = Math.sqrt(
+                        Math.pow(playerCell.x - trap.x, 2) + 
+                        Math.pow(playerCell.y - trap.y, 2)
+                    );
+                    
+                    if (distToPlayer > 100) {
+                        trap.isActive = true;
+                        trap.timer = trap.maxTimer;
+                        
+                        // 활성화 효과
+                        for (let j = 0; j < 30; j++) {
+                            createParticle(trap.x, trap.y, '#ff5555');
+                        }
+                    }
+                } else {
+                    trap.timer--;
+                    
+                    // 함정 소멸
+                    if (trap.timer <= 0) {
+                        traps.splice(i, 1);
+                        
+                        // 소멸 효과
+                        for (let j = 0; j < 20; j++) {
+                            createParticle(trap.x, trap.y, '#5555ff');
+                        }
+                    }
+                }
+                
+                // 함정 그리기
+                drawTrap(trap);
+            }
+        }
+
+        // 함정 그리기
+        function drawTrap(trap) {
+            ctx.beginPath();
+            ctx.arc(trap.x, trap.y, trap.radius, 0, Math.PI * 2);
+            
+            if (trap.isActive) {
+                // 활성화된 함정은 빨간색으로 깜빡임
+                ctx.fillStyle = `rgba(255, 85, 85, ${0.5 + 0.3 * Math.sin(gameTime * 0.1)})`;
+                
+                // 활성화 범위 표시
+                ctx.beginPath();
+                ctx.arc(trap.x, trap.y, trap.activationRadius, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(255, 85, 85, ${0.2 + 0.1 * Math.sin(gameTime * 0.05)})`;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            } else {
+                // 비활성 함정은 회색
+                ctx.fillStyle = 'rgba(150, 150, 150, 0.7)';
+            }
+            
+            ctx.fill();
+            ctx.closePath();
+            
+            // 함정 아이콘 (X 모양)
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(trap.x - trap.radius * 0.7, trap.y - trap.radius * 0.7);
+            ctx.lineTo(trap.x + trap.radius * 0.7, trap.y + trap.radius * 0.7);
+            ctx.moveTo(trap.x + trap.radius * 0.7, trap.y - trap.radius * 0.7);
+            ctx.lineTo(trap.x - trap.radius * 0.7, trap.y + trap.radius * 0.7);
+            ctx.stroke();
+            ctx.closePath();
+        }
+
+        // 파티클 업데이트
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                
+                p.x += p.dx;
+                p.y += p.dy;
+                p.life--;
+                
+                // 투명도 조절
+                ctx.globalAlpha = p.life / 50;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.fill();
+                ctx.closePath();
+                ctx.globalAlpha = 1;
+                
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        // 세포 그리기
+        function drawCell(cell) {
+            // 세포 본체
+            ctx.beginPath();
+            ctx.arc(cell.x, cell.y, cell.radius, 0, Math.PI * 2);
+            
+            // 그라데이션 적용
+            const gradient = ctx.createRadialGradient(
+                cell.x - cell.radius/3, cell.y - cell.radius/3, 0,
+                cell.x, cell.y, cell.radius
+            );
+            gradient.addColorStop(0, '#00bcd4');
+            gradient.addColorStop(1, '#0077b6');
+            ctx.fillStyle = gradient;
+            
+            ctx.fill();
+            
+            // 세포 테두리
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.closePath();
+            
+            // 눈 표시
+            const eyeSize = cell.radius * 0.15;
+            const dx = mouseX - cell.x;
+            const dy = mouseY - cell.y;
+            const eyeX = cell.x + cell.radius * 0.4 * Math.cos(Math.atan2(dy, dx));
+            const eyeY = cell.y + cell.radius * 0.4 * Math.sin(Math.atan2(dy, dx));
+            
+            ctx.beginPath();
+            ctx.arc(eyeX, eyeY, eyeSize, 0, Math.PI * 2);
+            ctx.fillStyle = 'white';
+            ctx.fill();
+            ctx.closePath();
+            
+            ctx.beginPath();
+            ctx.arc(eyeX, eyeY, eyeSize * 0.5, 0, Math.PI * 2);
+            ctx.fillStyle = 'black';
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        // 충돌 검사
+        function checkCollisions() {
+            // 적과 함정 충돌
+            for (let i = enemyCells.length - 1; i >= 0; i--) {
+                const enemy = enemyCells[i];
+                
+                // 이미 함정에 걸린 적은 체크하지 않음
+                if (enemy.isTrapped) continue;
+                
+                for (let j = traps.length - 1; j >= 0; j--) {
+                    const trap = traps[j];
+                    
+                    // 활성화된 함정만 체크
+                    if (!trap.isActive) continue;
+                    
+                    const distance = Math.sqrt(
+                        Math.pow(enemy.x - trap.x, 2) + 
+                        Math.pow(enemy.y - trap.y, 2)
+                    );
+                    
+                    // 함정 범위 내에 들어옴
+                    if (distance < trap.activationRadius) {
+                        // 함정에 걸림
+                        enemy.isTrapped = true;
+                        enemy.trapTimer = 0;
+                        enemy.speed = 0;
+                        
+                        // 함정 제거
+                       // traps.splice(j, 1);
+                        
+                        // 점수 증가
+                        addScore(10 * (1 + combo * 0.5));
+                        combo++;
+                        lastTrapTime = gameTime;
+                        
+                        // 콤보 표시
+                        if (combo > 1) {
+                            showCombo(combo);
+                        }
+                        
+                        // 파티클 효과
+                        for (let k = 0; k < 30; k++) {
+                            createParticle(enemy.x, enemy.y, enemy.color);
+                        }
+                        
+                        // 새로운 함정 쿨다운
+                        trapCooldown = 60; // 1초 쿨다운
+                        
+                        break;
+                    }
+                }
+            }
+            
+            // 플레이어와 적 충돌
+            for (let i = enemyCells.length - 1; i >= 0; i--) {
+                const enemy = enemyCells[i];
+                const distance = Math.sqrt(
+                    Math.pow(playerCell.x - enemy.x, 2) + 
+                    Math.pow(playerCell.y - enemy.y, 2)
+                );
+                
+                if (distance < playerCell.radius + enemy.radius && !enemy.isTrapped) {
+                    gameOver();
+                    return;
+                }
+            }
+        }
+
+        // 점수 추가
+        function addScore(amount) {
+            score += Math.floor(amount);
+            updateDisplays();
+        }
+
+        // 디스플레이 업데이트
+        function updateDisplays() {
+            scoreDisplay.textContent = score;
+            enemyCountDisplay.textContent = enemyCells.length;
+            levelDisplay.textContent = level;
+            comboCountDisplay.textContent = combo;
+            
+            // 콤보가 2 이상이면 색상 변경
+            if (combo >= 2) {
+                comboCountDisplay.style.color = 'gold';
+                comboCountDisplay.style.textShadow = '0 0 5px gold';
+            } else {
+                comboCountDisplay.style.color = 'white';
+                comboCountDisplay.style.textShadow = 'none';
+            }
+        }
+
+        // 콤보 표시
+        function showCombo(count) {
+            comboDisplay.textContent = `${count} COMBO!`;
+            comboDisplay.style.opacity = '1';
+            comboDisplay.style.transform = 'translate(-50%, -50%) scale(1.5)';
+            
+            setTimeout(() => {
+                comboDisplay.style.opacity = '0';
+                comboDisplay.style.transform = 'translate(-50%, -50%) scale(1)';
+            }, 1000);
+        }
+
+        // 레벨 업 표시
+        function showLevelUp() {
+            const levelUpText = document.createElement('div');
+            levelUpText.className = 'particle';
+            levelUpText.textContent = `LEVEL ${level}`;
+            levelUpText.style.color = 'cyan';
+            levelUpText.style.fontSize = '40px';
+            levelUpText.style.left = '50%';
+            levelUpText.style.top = '50%';
+            levelUpText.style.transform = 'translate(-50%, -50%)';
+            levelUpText.style.textAlign = 'center';
+            levelUpText.style.zIndex = '100';
+            document.body.appendChild(levelUpText);
+            
+            // 애니메이션
+            let opacity = 1;
+            let scale = 1;
+            const anim = setInterval(() => {
+                opacity -= 0.02;
+                scale += 0.02;
+                levelUpText.style.opacity = opacity;
+                levelUpText.style.transform = `translate(-50%, -50%) scale(${scale})`;
+                
+                if (opacity <= 0) {
+                    clearInterval(anim);
+                    levelUpText.remove();
+                }
+            }, 30);
+        }
+
+        // 게임 오버
+        function gameOver() {
+            gameRunning = false;
+            cancelAnimationFrame(animationId);
+            
+            // 게임 오버 효과
+            for (let i = 0; i < 100; i++) {
+                createParticle(playerCell.x, playerCell.y, playerCell.color);
+            }
+            
+            // 게임 오버 화면
+            const gameOverScreen = document.createElement('div');
+            gameOverScreen.style.position = 'absolute';
+            gameOverScreen.style.top = '0';
+            gameOverScreen.style.left = '0';
+            gameOverScreen.style.width = '100%';
+            gameOverScreen.style.height = '100%';
+            gameOverScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+            gameOverScreen.style.display = 'flex';
+            gameOverScreen.style.flexDirection = 'column';
+            gameOverScreen.style.justifyContent = 'center';
+            gameOverScreen.style.alignItems = 'center';
+            gameOverScreen.style.color = 'white';
+            gameOverScreen.style.zIndex = '100';
+            gameOverScreen.style.fontSize = '24px';
+            gameOverScreen.style.textAlign = 'center';
+            
+            gameOverScreen.innerHTML = `
+                <h1 style="color: #e74c3c; font-size: 3em; margin-bottom: 20px;">GAME OVER</h1>
+                <p style="font-size: 1.5em;">최종 점수: <span style="color: gold;">${score}</span></p>
+                <p style="font-size: 1.5em;">최대 콤보: <span style="color: cyan;">${combo}</span></p>
+                <p style="font-size: 1.5em;">레벨: <span style="color: #2ecc71;">${level}</span></p>
+                <p style="margin-top: 30px;">다시 시작하려면 클릭하세요</p>
+            `;
+            
+            document.body.appendChild(gameOverScreen);
+            
+            // 다시 시작 이벤트
+            gameOverScreen.addEventListener('click', () => {
+                gameOverScreen.remove();
+                startGame();
+            });
+        }
+
+        // 마우스 클릭 - 함정 설치
+        canvas.addEventListener('click', (e) => {
+            if (!gameRunning || trapCooldown > 0) return;
+            
+            // 함정 생성
+            createTrap(playerCell.x, playerCell.y);
+            
+            // 함정 쿨다운
+            trapCooldown = 180; // 3초 쿨다운
+        });
+
+        // 키보드 이벤트 - 부스팅
+        document.addEventListener('keydown', (e) => {
+            if (!gameRunning) return;
+            
+            // 스페이스 바 - 돌진
+            if (e.key === ' ' && playerCell.boostCooldown === 0) {
+                playerCell.isBoosting = true;
+                playerCell.boostCooldown = 120;
+            }
+        });
+
+        // 마우스 위치 추적
+        let mouseX = canvas.width / 2;
+        let mouseY = canvas.height / 2;
+        
+        window.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+
+        // 터치 지원
+        window.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            mouseX = e.touches[0].clientX;
+            mouseY = e.touches[0].clientY;
+        }, { passive: false });
+
+        // 시작 버튼 이벤트
+        startButton.addEventListener('click', startGame);
+
+        // 창 크기 변경 시 캔버스 조정
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+    </script>
+</body>
+</html>
