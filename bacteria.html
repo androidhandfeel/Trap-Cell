@@ -5,23 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>네온 박테리아 클리커</title>
     <style>
-        body {
-            background-color: #0a0a1a;
-            color: #00ffcc;
-            font-family: 'Arial', sans-serif;
-            text-align: center;
-            margin: 0;
-            padding: 20px;
-            overflow: hidden;
-            user-select: none;
-        }
-        
-        #game-container {
-            position: relative;
-            width: 100%;
-            max-width: 800px;
-            margin: 0 auto;
-        }
+      body {
+        background-color: #0a0a1a;
+        color: #00ffcc;
+        font-family: 'Arial', sans-serif;
+        text-align: center;
+        margin: 0;
+        padding: 20px;
+        /* overflow: hidden 제거 */
+        user-select: none;
+        height: 100vh;
+        overflow-y: auto; /* 수직 스크롤바 추가 */
+    }
+    
+    #game-container {
+        position: relative;
+        width: 100%;
+        max-width: 800px;
+        margin: 0 auto;
+        min-height: 100vh; /* 컨테이너가 화면 높이보다 클 수 있도록 */
+        padding-bottom: 50px; /* 하단 여백 추가 */
+    } 
         
         #game-instructions {
             background-color: rgba(0, 30, 30, 0.7);
@@ -234,7 +238,9 @@
         </div>
         
         <div id="prestige">
-            <p id="prestige-points">[프레스티지] 진행을 리셋하고 영구적인 보너스를 얻으세요 프레스티지 포인트: 0  </p>
+            <h3>프레스티지</h3>
+            <p>진행을 리셋하고 영구적인 보너스를 얻으세요</p>
+            <p id="prestige-points">프레스티지 포인트: 0</p>
             <button id="prestige-button">프레스티지 실행</button>
         </div>
 	        <div id="game-instructions">
@@ -496,7 +502,7 @@
         }
         
         // 파티클 효과 생성 (수정된 버전)
-        function createParticles(x, y, count, color = '#00ffcc') {
+        function createParticles(x, y, count, color = '#ff7777') {
             for (let i = 0; i < count; i++) {
                 const particle = document.createElement('div');
                 particle.className = 'particle';
