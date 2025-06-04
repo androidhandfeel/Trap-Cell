@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>네온 박테리아 클리커</title>
+    <style>
+        body {
+            background-color: #0a0a1a;
+            color: #00ffcc;
+            font-family: 'Arial', sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+            overflow: hidden;
+            user-select: none;
+        }
+        
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        #game-instructions {
+            background-color: rgba(0, 30, 30, 0.7);
+            border: 1px solid #00ffcc;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px auto;
+            max-width: 600px;
+            text-align: left;
+            transition: opacity 0.5s, transform 0.5s;
+        }
+        
+        #game-instructions.hidden {
+            opacity: 0;
+            transform: translateY(-20px);
+            pointer-events: none;
+        }
+        
+        #game-instructions h2 {
+            color: #00ff99;
+            margin-top: 0;
+            text-align: center;
+        }
+        
+        #game-instructions ul {
+            padding-left: 20px;
+        }
+        
+        #close-instructions {
+            display: block;
+            margin: 10px auto 0;
+            padding: 5px 15px;
+            background-color: rgba(0, 100, 100, 0.5);
+            border: 1px solid #00ffcc;
+            border-radius: 5px;
+            color: #00ffcc;
+            cursor: pointer;
+        }
+        
+        #bacteria-count {
+            font-size: 2.5em;
+            margin: 20px 0;
+            text-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc;
+        }
+        
+        #click-area {
+            width: 300px;
+            height: 300px;
+            margin: 20px auto;
+            background-color: rgba(0, 50, 50, 0.3);
+            border-radius: 50%;
+            border: 3px solid #00ffcc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 20px #00ffcc, inset 0 0 20px #00ffcc;
+            transition: transform 0.1s;
+        }
+        
+        #click-area:active {
+            transform: scale(0.95);
+        }
+        
+        #bacteria {
+            width: 150px;
+            height: 150px;
+            background-color: #00ffcc;
+            border-radius: 50%;
+            box-shadow: 0 0 30px #00ffcc;
+            position: relative;
+            animation: pulse 2s infinite alternate;
+        }
+        
+        #bacteria::before, #bacteria::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 2px solid #00ffcc;
+            animation: ripple 3s infinite;
+        }
+        
+        #bacteria::after {
+            animation-delay: 1s;
+        }
+        
+        #cps-display {
+            font-size: 1.2em;
+            margin: 10px 0;
+            color: #00ff99;
+        }
+        
+        #upgrades {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        
+        .upgrade {
+            background-color: rgba(0, 50, 50, 0.5);
+            border: 1px solid #00ffcc;
+            border-radius: 5px;
+            padding: 10px;
+            width: 180px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .upgrade:hover {
+            background-color: rgba(0, 100, 100, 0.5);
+            box-shadow: 0 0 10px #00ffcc;
+        }
+        
+        .upgrade:active {
+            transform: scale(0.95);
+        }
+        
+        .upgrade h3 {
+            margin: 5px 0;
+            color: #00ff99;
+        }
+        
+        .upgrade p {
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+        
+        .upgrade .cost {
+            color: #ff6699;
+            font-weight: bold;
+        }
+        
+        .upgrade .owned {
+            color: #6699ff;
+            font-weight: bold;
+        }
+        
+        .particle {
+            position: absolute;
+            background-color: #00ffcc;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 30px #00ffcc; }
+            100% { transform: scale(1.05); box-shadow: 0 0 50px #00ffcc; }
+        }
+        
+        @keyframes ripple {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+        
+        #floating-text {
+            position: absolute;
+            color: #ff6699;
+            font-weight: bold;
+            pointer-events: none;
+            animation: float-up 1s forwards;
+            text-shadow: 0 0 5px #ff0066;
+            z-index: 20;
+        }
+        
+        @keyframes float-up {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-50px); opacity: 0; }
+        }
+        
+        #prestige {
+            margin-top: 30px;
+            padding: 15px;
+            background-color: rgba(100, 0, 100, 0.5);
+            border: 1px solid #ff00ff;
+            border-radius: 5px;
+            display: inline-block;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        #prestige:hover {
+            background-color: rgba(150, 0, 150, 0.5);
+            box-shadow: 0 0 15px #ff00ff;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <h1>네온 박테리아 클리커</h1>
+        
+
+       
+        
+        <div id="bacteria-count">0 박테리아</div>
+        <div id="cps-display">초당 0 박테리아 생성</div>
+        
+        <div id="click-area">
+            <div id="bacteria"></div>
+        </div>
+        
+        <div id="upgrades">
+            <!-- 업그레이드는 자바스크립트로 추가됩니다 -->
+        </div>
+        
+        <div id="prestige">
+            <h3>프레스티지</h3>
+            <p>진행을 리셋하고 영구적인 보너스를 얻으세요</p>
+            <p id="prestige-points">프레스티지 포인트: 0</p>
+            <button id="prestige-button">프레스티지 실행</button>
+        </div>
+	        <div id="game-instructions">
+				<h2>게임 방법</h2>
+				<ul>
+					<li><strong>박테리아 클릭</strong>: 중앙의 네온 박테리아를 클릭하면 박테리아가 생성됩니다.</li>
+					<li><strong>업그레이드 구매</strong>: 박테리아를 사용해 자동 생산 시설을 구매하세요.</li>
+					<li><strong>초당 생산량(CPS)</strong>: 업그레이드가 많을수록 초당 더 많은 박테리아가 자동으로 생성됩니다.</li>
+					<li><strong>프레스티지 시스템</strong>: 충분한 박테리아를 모으면 게임을 리셋하고 영구적인 보너스를 얻을 수 있습니다.</li>
+					
+				</ul>
+            <button id="close-instructions">확인</button>
+			 </div>
+    </div>
+
+    <script>
+        // 게임 상태
+        let bacteria = 0;
+        let cps = 0;
+        let prestigePoints = 0;
+        let prestigeBonus = 1;
+        
+        // 업그레이드 데이터
+        const upgrades = [
+            {
+                name: "단세포 생물",
+                description: "느리게 분열하는 기본 박테리아",
+                baseCost: 10,
+                baseCps: 0.1,
+                owned: 0,
+                unlockAt: 0
+            },
+            {
+                name: "콜로니",
+                description: "협력하는 작은 박테리아 집단",
+                baseCost: 50,
+                baseCps: 0.5,
+                owned: 0,
+                unlockAt: 20
+            },
+            {
+                name: "생물막",
+                description: "생식을 증가시키는 보호층",
+                baseCost: 100,
+                baseCps: 2,
+                owned: 0,
+                unlockAt: 100
+            },
+            {
+                name: "페트리 접시",
+                description: "박테리아 성장에 이상적인 환경",
+                baseCost: 500,
+                baseCps: 10,
+                owned: 0,
+                unlockAt: 500
+            },
+            {
+                name: "실험실 배양",
+                description: "과학적으로 최적화된 박테리아 균주",
+                baseCost: 3000,
+                baseCps: 40,
+                owned: 0,
+                unlockAt: 2000
+            },
+            {
+                name: "바이오리액터",
+                description: "산업 규모의 박테리아 생산",
+                baseCost: 10000,
+                baseCps: 100,
+                owned: 0,
+                unlockAt: 7000
+            },
+            {
+                name: "나노봇 공생",
+                description: "미세 기계가 박테리아 생식을 증진",
+                baseCost: 50000,
+                baseCps: 500,
+                owned: 0,
+                unlockAt: 20000
+            },
+            {
+                name: "양자 생물 발생",
+                description: "기하급수적 성장을 위한 양자 물리학 활용",
+                baseCost: 200000,
+                baseCps: 2000,
+                owned: 0,
+                unlockAt: 100000
+            }
+        ];
+        
+        // DOM 요소
+        const bacteriaCountElement = document.getElementById('bacteria-count');
+        const cpsDisplayElement = document.getElementById('cps-display');
+        const clickAreaElement = document.getElementById('click-area');
+        const upgradesElement = document.getElementById('upgrades');
+        const prestigePointsElement = document.getElementById('prestige-points');
+        const prestigeButtonElement = document.getElementById('prestige-button');
+        const instructionsElement = document.getElementById('game-instructions');
+        const closeInstructionsButton = document.getElementById('close-instructions');
+        
+        // 게임 초기화
+        function init() {
+            updateDisplay();
+            renderUpgrades();
+            
+            // 클릭 이벤트 설정
+            clickAreaElement.addEventListener('click', handleClick);
+            
+            // 프레스티지 버튼 설정
+            prestigeButtonElement.addEventListener('click', prestige);
+            
+            // 게임 방법 닫기 버튼 설정
+            closeInstructionsButton.addEventListener('click', () => {
+                instructionsElement.classList.add('hidden');
+            });
+            
+            // 게임 루프
+            setInterval(gameTick, 1000);
+            
+            // 애니메이션 루프
+            requestAnimationFrame(animationFrame);
+        }
+        
+        // 박테리아 클릭 처리 (수정된 버전)
+        function handleClick(event) {
+            // 클릭 위치 계산 (게임 컨테이너 기준)
+            const gameContainer = document.getElementById('game-container');
+            const containerRect = gameContainer.getBoundingClientRect();
+            
+            // 클릭 위치 보정 (컨테이너 내 상대적 위치)
+            const x = event.clientX - containerRect.left;
+            const y = event.clientY - containerRect.top;
+            
+            // 박테리아 추가
+            addBacteria(1 * prestigeBonus);
+            
+            // 파티클 생성 (보정된 클릭 위치에서)
+            createParticles(x, y, 15);
+            
+            // 떠오르는 텍스트 생성 (보정된 클릭 위치에서)
+            createFloatingText("+" + (1 * prestigeBonus).toFixed(1), x, y);
+        }
+        
+        // 박테리아 추가
+        function addBacteria(amount) {
+            bacteria += amount;
+            updateDisplay();
+        }
+        
+        // 게임 틱 (매초)
+        function gameTick() {
+            calculateCPS();
+            addBacteria(cps);
+			renderUpgrades();
+        }
+        
+        // 현재 CPS 계산
+        function calculateCPS() {
+            cps = 0;
+            upgrades.forEach(upgrade => {
+                cps += upgrade.owned * upgrade.baseCps * prestigeBonus;
+            });
+            updateDisplay();
+        }
+        
+        // 업그레이드 구매
+        function buyUpgrade(index) {
+            const upgrade = upgrades[index];
+            const cost = getUpgradeCost(index);
+            
+            if (bacteria >= cost) {
+                bacteria -= cost;
+                upgrade.owned++;
+                updateDisplay();
+                renderUpgrades();
+                
+                // 축하 파티클 생성
+                const rect = clickAreaElement.getBoundingClientRect();
+                const containerRect = document.getElementById('game-container').getBoundingClientRect();
+                const centerX = rect.left + rect.width/2 - containerRect.left;
+                const centerY = rect.top + rect.height/2 - containerRect.top;
+                createParticles(centerX, centerY, 30);
+            }
+        }
+        
+        // 업그레이드 비용 계산
+        function getUpgradeCost(index) {
+            const upgrade = upgrades[index];
+            return Math.floor(upgrade.baseCost * Math.pow(1.15, upgrade.owned));
+        }
+        
+        // 프레스티지 - 보너스를 위해 게임 리셋
+        function prestige() {
+            // 프레스티지 포인트 계산 (총 박테리아의 제곱근 / 1백만)
+            const newPoints = Math.sqrt(bacteria / 1000000);
+            
+            if (newPoints >= 1) {
+                prestigePoints += newPoints;
+                prestigeBonus = 1 + (prestigePoints * 0.1); // 포인트당 10% 보너스
+                
+                // 게임 리셋
+                bacteria = 0;
+                upgrades.forEach(upgrade => {
+                    upgrade.owned = 0;
+                });
+                
+                updateDisplay();
+                renderUpgrades();
+                
+                // 프레스티지 효과 표시
+                const rect = clickAreaElement.getBoundingClientRect();
+                const containerRect = document.getElementById('game-container').getBoundingClientRect();
+                const centerX = rect.left + rect.width/2 - containerRect.left;
+                const centerY = rect.top + rect.height/2 - containerRect.top;
+                
+                for (let i = 0; i < 100; i++) {
+                    setTimeout(() => {
+                        createParticles(centerX, centerY, 5, '#ff00ff');
+                    }, i * 20);
+                }
+            }
+        }
+        
+        // 화면 업데이트
+        function updateDisplay() {
+            bacteriaCountElement.textContent = formatNumber(bacteria) + " 박테리아";
+            cpsDisplayElement.textContent = formatNumber(cps) + " 초당 박테리아";
+            prestigePointsElement.textContent = "프레스티지 포인트: " + formatNumber(prestigePoints) + 
+                                              " (" + (prestigeBonus * 100).toFixed(0) + "% 보너스)";
+            
+            // 충분한 박테리아가 없으면 프레스티지 버튼 비활성화
+            prestigeButtonElement.disabled = Math.sqrt(bacteria / 1000000) < 1;
+        }
+        
+        // 사용 가능한 업그레이드 렌더링
+        function renderUpgrades() {
+            upgradesElement.innerHTML = '';
+            
+            upgrades.forEach((upgrade, index) => {
+                if (bacteria >= upgrade.unlockAt) {
+                    const cost = getUpgradeCost(index);
+                    const canAfford = bacteria >= cost;
+                    
+                    const upgradeElement = document.createElement('div');
+                    upgradeElement.className = 'upgrade';
+                    upgradeElement.style.opacity = canAfford ? '1' : '0.7';
+                    upgradeElement.innerHTML = `
+                        <h3>${upgrade.name}</h3>
+                        <p>${upgrade.description}</p>
+                        <p class="cost">비용: ${formatNumber(cost)} 박테리아</p>
+                        <p>생산량: <strong>${(upgrade.baseCps * prestigeBonus).toFixed(1)}/초</strong></p>
+                        <p class="owned">보유: ${upgrade.owned}</p>
+                    `;
+                    
+                    upgradeElement.addEventListener('click', () => buyUpgrade(index));
+                    upgradesElement.appendChild(upgradeElement);
+                }
+            });
+        }
+        
+        // 파티클 효과 생성 (수정된 버전)
+        function createParticles(x, y, count, color = '#00ffcc') {
+            for (let i = 0; i < count; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.left = x + 'px';
+                particle.style.top = y + 'px';
+                particle.style.backgroundColor = color;
+                
+                // 랜덤 크기
+                const size = Math.random() * 10 + 5;
+                particle.style.width = size + 'px';
+                particle.style.height = size + 'px';
+                
+                // 랜덤 애니메이션
+                const angle = Math.random() * Math.PI * 2;
+                const distance = Math.random() * 100 + 50;
+                const duration = Math.random() * 1 + 0.5;
+                
+                particle.style.transition = `all ${duration}s linear`;
+                document.getElementById('game-container').appendChild(particle);
+                
+                // 애니메이션 적용
+                setTimeout(() => {
+                    particle.style.opacity = '0';
+                    particle.style.transform = `translate(${Math.cos(angle) * distance}px, ${Math.sin(angle) * distance}px)`;
+                }, 10);
+                
+                // 애니메이션 후 제거
+                setTimeout(() => {
+                    if (particle.parentNode) {
+                        particle.parentNode.removeChild(particle);
+                    }
+                }, duration * 1000 + 100);
+            }
+        }
+        
+        // 떠오르는 텍스트 효과 생성
+        function createFloatingText(text, x, y) {
+            const floatingText = document.createElement('div');
+            floatingText.id = 'floating-text';
+            floatingText.textContent = text;
+            floatingText.style.left = x + 'px';
+            floatingText.style.top = y + 'px';
+            
+            document.getElementById('game-container').appendChild(floatingText);
+            
+            // 애니메이션 후 제거
+            setTimeout(() => {
+                if (floatingText.parentNode) {
+                    floatingText.parentNode.removeChild(floatingText);
+                }
+            }, 1000);
+        }
+        
+        // 큰 숫자 포맷팅
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(2) + 'M';
+            }
+            if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return Math.floor(num);
+        }
+        
+        // 애니메이션 프레임
+        function animationFrame() {
+            // 추가 애니메이션이 필요한 경우 여기에 구현
+            requestAnimationFrame(animationFrame);
+        }
+        
+        // 게임 시작
+        init();
+    </script>
+</body>
+</html>
